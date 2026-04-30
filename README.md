@@ -492,3 +492,4 @@ After a page refresh, `onAuthStateChanged` restores the Google session and `onSn
 ---
 
 *Built for a hackathon. Architecture designed to demonstrate production-grade privacy infrastructure patterns.*
+**Author** [Zhoshy Khalelov](https://github.com/zhxshy)
