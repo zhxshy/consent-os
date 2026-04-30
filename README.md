@@ -50,7 +50,7 @@ Key properties of the system:
 
 - **Tailwind CSS v4** is loaded via `@tailwindcss/vite` — no `tailwind.config.js` file is required. All styles are co-located in component JSX.
 - **Framer Motion** is used for all interactive transitions: consent card exit animations, SVG data-particle flows, panic-mode explosion sequences, and modal entrance/exit choreography.
-- **Firebase v12** uses the modular SDK tree-shaken at build time, keeping the bundle lean. `onSnapshot` subscriptions replace all polling patterns throughout the codebase.
+- **Firebase v12** uses the modular SDK tree-shaken at build time, keeping the bundle lean. `onSnapshot` subscriptions replace all polling patterns throughout the codebase. The activity history sub-collection uses `query(orderBy("timestamp", "desc"), limit(10))` so Firestore handles sorting and pagination — no client-side sorting required.
 
 ---
 
@@ -133,6 +133,21 @@ users/
             ├── revokedAt:   Timestamp | null
             ├── revokeToken: string | null ← "REV-SHA256-{random}"
             └── expiresAt:   Timestamp | null ← null = permanent grant
+```
+
+### Activity history: `users/{uid}/history/{auto-id}`
+
+Per-user sub-collection for the persistent activity log. Ordered by `timestamp desc`, limited to the 10 most recent events.
+
+```
+users/
+└── {uid}/
+    └── history/
+        └── {auto-id}
+            ├── serviceId:  string               ← e.g. "kaspi-kz"
+            ├── action:     "GRANTED" | "REVOKED"
+            ├── dataTypes:  string[]
+            └── timestamp:  Timestamp            ← serverTimestamp(), ordered desc
 ```
 
 ### Audit collections (top-level, append-only)
@@ -269,7 +284,39 @@ This models a real privacy-preserving pattern: the requesting service continues 
 
 ---
 
-### 6. Cyberpunk-Themed Dashboard
+### 6. Persistent Activity Log
+
+Every grant and revocation is written to a per-user Firestore sub-collection (`users/{uid}/history`) the moment the mutation completes. The dashboard subscribes to this collection with a real-time `onSnapshot` listener so the **Recent Activity** panel always reflects what is actually in the database — surviving page refreshes, tab reloads, and multi-device sessions.
+
+```js
+// firebase-integration.js
+export async function logActivity(uid, { serviceId, action, dataTypes }) {
+  await addDoc(collection(db, "users", uid, "history"), {
+    serviceId, action, dataTypes,
+    timestamp: serverTimestamp(),
+  });
+}
+
+export function subscribeHistory(uid, callback) {
+  const q = query(
+    collection(db, "users", uid, "history"),
+    orderBy("timestamp", "desc"),
+    limit(10),
+  );
+  return onSnapshot(q, (snap) =>
+    callback(snap.docs.map((d) => ({
+      id: d.id, ...d.data(),
+      timestamp: d.data().timestamp?.toDate?.() ?? new Date(),
+    })))
+  );
+}
+```
+
+`logActivity` is called after each successful Firestore write — after `revokePermission` resolves for single revocations, and after `panicRevokeAll` resolves with a `Promise.all` for batch events. The `HistoryLog` component maps directly over the live Firestore snapshot; there is no local state involved.
+
+---
+
+### 7. Cyberpunk-Themed Dashboard
 
 The UI is built on a `slate-950` dark base with layered transparency, backdrop blur, and accent colors derived from the risk scoring engine:
 
@@ -296,6 +343,14 @@ service cloud.firestore {
     match /users/{uid}/permissions/{serviceId} {
       allow read, write: if request.auth != null
                          && request.auth.uid == uid;
+    }
+
+    // Activity history — owner-only, append-only
+    match /users/{uid}/history/{docId} {
+      allow create: if request.auth != null
+                    && request.auth.uid == uid;
+      allow read:   if request.auth != null
+                    && request.auth.uid == uid;
     }
 
     // Audit logs — users can create their own records, never modify or delete
