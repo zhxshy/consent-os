@@ -3,6 +3,7 @@ import {
   grantConsent,
   subscribeAuth, signInWithGoogle, signOutUser,
   subscribePermissions, writePermission, revokePermission, panicRevokeAll, checkPermission,
+  logActivity, subscribeHistory,
 } from "./firebase-integration";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -283,14 +284,14 @@ function DataFlowViz({ consents, revoking }) {
 // ── HISTORY LOG ───────────────────────────────────────────────────────────────
 
 function HistoryLog({ history }) {
-  const entries = history.slice(0, 5);
+  const entries = history.slice(0, 10);
   return (
     <div className="bg-slate-900/50 border border-slate-800/60 rounded-2xl p-5 backdrop-blur-md">
       <div className="flex justify-between items-center mb-4">
         <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
           <Activity size={12} /> Recent Activity
         </span>
-        <span className="text-[11px] text-slate-700">last {Math.min(history.length, 5)} actions</span>
+        <span className="text-[11px] text-slate-700">last {entries.length} actions</span>
       </div>
 
       {entries.length === 0 ? (
@@ -300,7 +301,7 @@ function HistoryLog({ history }) {
           <AnimatePresence initial={false}>
             {entries.map((h, i) => {
               const svc     = SERVICES_DB.find((s) => s.id === h.serviceId);
-              const granted = h.event === "GRANTED";
+              const granted = h.action === "GRANTED";
               const catHex  = CATEGORY_COLORS[svc?.category] || "#94a3b8";
               const isLast  = i === entries.length - 1;
               return (
@@ -336,11 +337,27 @@ function HistoryLog({ history }) {
                         {granted ? "Granted" : "Revoked"}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-[11px] text-slate-600 truncate">
-                        {h.dataTypes.map((dt) => DATA_TYPES[dt]?.label).filter(Boolean).join(" · ")}
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-[11px] text-slate-600 truncate min-w-0 flex-1">
+                        {(() => {
+                          const labels = h.dataTypes
+                            .map((dt) => DATA_TYPES[dt]?.label)
+                            .filter(Boolean);
+                          const visible = labels.slice(0, 3);
+                          const overflow = labels.length - 3;
+                          return (
+                            <>
+                              {visible.join(" · ")}
+                              {overflow > 0 && (
+                                <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800/60 border border-slate-700/50 text-slate-500 whitespace-nowrap flex-shrink-0 inline-flex">
+                                  +{overflow} more
+                                </span>
+                              )}
+                            </>
+                          );
+                        })()}
                       </span>
-                      <span className="text-[11px] text-slate-700 flex items-center gap-1 flex-shrink-0 ml-2">
+                      <span className="text-[11px] text-slate-700 flex items-center gap-1 flex-shrink-0">
                         <Clock size={9} /> {relativeTime(h.timestamp)}
                       </span>
                     </div>
@@ -396,77 +413,81 @@ function ConsentCard({ consent, isRevoking, onRevoke, isPanicking }) {
       <div className="absolute left-0 top-3 bottom-3 w-[3px] rounded-r-full"
         style={{ background: rm.color, opacity: 0.8 }} />
 
-      <div className="flex items-start justify-between gap-4 pl-4">
-        {/* Left */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap mb-1.5">
-            <span className="text-[15px] font-bold text-slate-100 leading-tight">{svc?.name}</span>
-            {svc?.flag && <span className="text-sm leading-none">{svc.flag}</span>}
-            <span className={cn(
-              "text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider border",
-              catTw.text, catTw.bg, catTw.border
-            )}>{svc?.category}</span>
+      {/* Vertical stack — three independent rows */}
+      <div className="flex flex-col gap-2.5 pl-4">
+
+        {/* Row 1: Service identity + Revoke button */}
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              <span className="text-[15px] font-bold text-slate-100 leading-tight">{svc?.name}</span>
+              {svc?.flag && <span className="text-sm leading-none">{svc.flag}</span>}
+              <span className={cn(
+                "text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider border",
+                catTw.text, catTw.bg, catTw.border
+              )}>{svc?.category}</span>
+            </div>
+            <p className="text-[12px] text-slate-500 leading-snug">{svc?.desc}</p>
           </div>
 
-          <p className="text-[12px] text-slate-500 mb-3 leading-snug">{svc?.desc}</p>
-
-          <div className="flex flex-wrap gap-1.5 mb-3">
-            {consent.dataTypes.map((dt) => <DataTypePill key={dt} type={dt} />)}
-          </div>
-
-          <div className="flex items-center gap-3 flex-wrap">
-            <RiskBadge score={score} />
-            <span className="text-[11px] text-slate-600 flex items-center gap-1">
-              <Clock size={10} /> {timeAgo(consent.grantedAt)}
-            </span>
-            {isEphemeral && (
-              <motion.span
-                animate={!isExpired && minsLeft <= 5
-                  ? { opacity: [1, 0.5, 1] }
-                  : {}}
-                transition={{ duration: 1.2, repeat: Infinity }}
-                className={cn(
-                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider",
-                  isExpired
-                    ? "text-red-400 bg-red-500/10 border-red-500/25"
-                    : minsLeft <= 5
-                    ? "text-amber-400 bg-amber-500/10 border-amber-500/25"
-                    : "text-sky-400 bg-sky-500/10 border-sky-500/25"
-                )}
-              >
-                <Timer size={9} />
-                {isExpired
-                  ? "Expired"
-                  : minsLeft <= 60
-                  ? `${minsLeft}m left`
-                  : `${Math.ceil(minsLeft / 60)}h left`}
-              </motion.span>
+          <motion.button
+            whileHover={{ scale: 1.04 }}
+            whileTap={{ scale: 0.96 }}
+            onClick={() => onRevoke(consent)}
+            disabled={isRevoking}
+            className="flex-shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-lg
+                       border border-red-500/25 bg-red-500/10 text-red-400 text-xs font-semibold
+                       hover:bg-red-500/20 hover:border-red-500/40 transition-all duration-200
+                       disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isRevoking ? (
+              <>
+                <motion.span animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }} className="flex">
+                  <Trash2 size={12} />
+                </motion.span>
+                Revoking…
+              </>
+            ) : (
+              <><Trash2 size={12} /> Revoke</>
             )}
-          </div>
+          </motion.button>
         </div>
 
-        {/* Revoke */}
-        <motion.button
-          whileHover={{ scale: 1.04 }}
-          whileTap={{ scale: 0.96 }}
-          onClick={() => onRevoke(consent)}
-          disabled={isRevoking}
-          className="flex-shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-lg
-                     border border-red-500/25 bg-red-500/10 text-red-400 text-xs font-semibold
-                     hover:bg-red-500/20 hover:border-red-500/40 transition-all duration-200
-                     disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isRevoking ? (
-            <>
-              <motion.span animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }} className="flex">
-                <Trash2 size={12} />
-              </motion.span>
-              Revoking…
-            </>
-          ) : (
-            <><Trash2 size={12} /> Revoke</>
+        {/* Row 2: Data type pills — wraps freely, never overflows */}
+        {consent.dataTypes.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {consent.dataTypes.map((dt) => <DataTypePill key={dt} type={dt} />)}
+          </div>
+        )}
+
+        {/* Row 3: Status row — always last, always visible */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <RiskBadge score={score} />
+          <span className="text-[11px] text-slate-600 flex items-center gap-1">
+            <Clock size={10} /> {timeAgo(consent.grantedAt)}
+          </span>
+          {isEphemeral && (
+            <motion.span
+              animate={!isExpired && minsLeft <= 5 ? { opacity: [1, 0.5, 1] } : {}}
+              transition={{ duration: 1.2, repeat: Infinity }}
+              className={cn(
+                "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider",
+                isExpired
+                  ? "text-red-400 bg-red-500/10 border-red-500/25"
+                  : minsLeft <= 5
+                  ? "text-amber-400 bg-amber-500/10 border-amber-500/25"
+                  : "text-sky-400 bg-sky-500/10 border-sky-500/25"
+              )}
+            >
+              <Timer size={9} />
+              {isExpired
+                ? "Expired"
+                : minsLeft <= 60
+                ? `${minsLeft}m left`
+                : `${Math.ceil(minsLeft / 60)}h left`}
+            </motion.span>
           )}
-        </motion.button>
+        </div>
       </div>
     </motion.div>
   );
@@ -1140,6 +1161,12 @@ export default function ConsentOS() {
     return unsub;
   }, []);
 
+  // History listener — 10 most-recent events, persisted in Firestore
+  useEffect(() => {
+    if (!user) return;
+    return subscribeHistory(user.uid, setHistory);
+  }, [user?.uid]);
+
   // Permissions listener — scoped to the signed-in user's sub-collection
   useEffect(() => {
     if (!user) { setLoading(false); return; }
@@ -1193,15 +1220,13 @@ export default function ConsentOS() {
 
   async function handleRevoke(consent) {
     setRevoking(consent.id);
-    setHistory((p) => [{
-      id: `h${Date.now()}`, event: "REVOKED",
-      serviceId: consent.serviceId, dataTypes: consent.dataTypes, timestamp: new Date(),
-    }, ...p]);
     setPulse(true);
     setTimeout(() => setPulse(false), 1000);
-    // onSnapshot removes the card once Firestore confirms status: false
     revokePermission(user.uid, consent.serviceId)
-      .then(() => setRevoking(null))
+      .then(() => {
+        setRevoking(null);
+        return logActivity(user.uid, { serviceId: consent.serviceId, action: "REVOKED", dataTypes: consent.dataTypes });
+      })
       .catch((err) => { console.error("Failed to revoke:", err); setRevoking(null); });
   }
 
@@ -1213,27 +1238,22 @@ export default function ConsentOS() {
     await new Promise((r) => setTimeout(r, 60));
     // Optimistic clear — onSnapshot will confirm after writeBatch resolves
     setConsents([]);
-    setHistory((p) => [
-      ...toRevoke.map((c) => ({
-        id: `panic-${c.id}-${Date.now()}`, event: "REVOKED",
-        serviceId: c.serviceId, dataTypes: c.dataTypes, timestamp: new Date(),
-      })),
-      ...p,
-    ]);
     setPulse(true);
     setTimeout(() => { setPanicking(false); setPulse(false); }, 600);
-    // Batch-revoke all permissions atomically
+    // Batch-revoke all permissions atomically, then log each event
     panicRevokeAll(user.uid, toRevoke.map((c) => c.serviceId))
+      .then(() =>
+        Promise.all(
+          toRevoke.map((c) =>
+            logActivity(user.uid, { serviceId: c.serviceId, action: "REVOKED", dataTypes: c.dataTypes })
+          )
+        )
+      )
       .catch((err) => console.error("Panic batch revoke failed:", err));
   }
 
   function handleGrant({ serviceId, dataTypes, durationMinutes }) {
     const svc = SERVICES_DB.find((s) => s.id === serviceId);
-    // consents will update via onSnapshot once writePermission resolves
-    setHistory((p) => [{
-      id: `h${Date.now()}`, event: "GRANTED",
-      serviceId, dataTypes, timestamp: new Date(),
-    }, ...p]);
     setShowGrant(false);
     setPulse(true);
     setTimeout(() => setPulse(false), 1000);
@@ -1244,7 +1264,10 @@ export default function ConsentOS() {
       dataTypes,
       durationInMinutes: durationMinutes,
     })
-      .then(() => grantConsent({ userId: user.uid, serviceId, dataTypes, baseRisk: svc?.baseRisk ?? 0 }))
+      .then(() => Promise.all([
+        grantConsent({ userId: user.uid, serviceId, dataTypes, baseRisk: svc?.baseRisk ?? 0 }),
+        logActivity(user.uid, { serviceId, action: "GRANTED", dataTypes }),
+      ]))
       .catch((err) => console.error("Failed to grant access:", err));
   }
 

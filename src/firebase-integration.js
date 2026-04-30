@@ -1,6 +1,6 @@
 import {
   collection, addDoc, updateDoc, setDoc, doc, serverTimestamp,
-  onSnapshot, writeBatch, getDoc, Timestamp,
+  onSnapshot, writeBatch, getDoc, Timestamp, query, orderBy, limit,
 } from "firebase/firestore";
 import {
   GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
@@ -126,4 +126,42 @@ export async function panicRevokeAll(userId, serviceIds) {
 export async function checkPermission(userId, serviceId) {
   const snap = await getDoc(permDoc(userId, serviceId));
   return snap.exists() ? snap.data() : null;
+}
+
+// ── History ───────────────────────────────────────────────────────────────────
+//
+//   users/{uid}/history/{auto-id}
+//     serviceId  : string
+//     action     : "GRANTED" | "REVOKED"
+//     dataTypes  : string[]
+//     timestamp  : serverTimestamp()
+
+function historyCol(uid) {
+  return collection(db, "users", uid, "history");
+}
+
+// Append one event — fire-and-forget; caller handles errors
+export async function logActivity(uid, { serviceId, action, dataTypes }) {
+  await addDoc(historyCol(uid), {
+    serviceId, action, dataTypes,
+    timestamp: serverTimestamp(),
+  });
+}
+
+// Real-time listener — 10 most-recent events, newest first
+export function subscribeHistory(uid, callback) {
+  const q = query(historyCol(uid), orderBy("timestamp", "desc"), limit(10));
+  return onSnapshot(
+    q,
+    (snap) =>
+      callback(
+        snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+          // normalise Firestore Timestamp → JS Date for relativeTime()
+          timestamp: d.data().timestamp?.toDate?.() ?? new Date(),
+        }))
+      ),
+    (err) => console.error("history snapshot error:", err),
+  );
 }
