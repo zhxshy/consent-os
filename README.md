@@ -35,16 +35,16 @@ Key properties of the system:
 
 ## Technical Stack
 
-| Layer | Technology | Version |
-|---|---|---|
-| UI Framework | React | 19.2 |
-| Build Tool | Vite | 8.0 |
-| Styling | Tailwind CSS v4 (Vite plugin) | 4.2 |
-| Animation | Framer Motion | 12.38 |
-| Icons | Lucide React | 1.8 |
-| Backend / Database | Firebase Firestore | 12.12 |
-| Authentication | Firebase Auth (Google OAuth 2.0) | 12.12 |
-| Language | JavaScript (ESM) | ES2022+ |
+| Layer              | Technology                       | Version |
+| ------------------ | -------------------------------- | ------- |
+| UI Framework       | React                            | 19.2    |
+| Build Tool         | Vite                             | 8.0     |
+| Styling            | Tailwind CSS v4 (Vite plugin)    | 4.2     |
+| Animation          | Framer Motion                    | 12.38   |
+| Icons              | Lucide React                     | 1.8     |
+| Backend / Database | Firebase Firestore               | 12.12   |
+| Authentication     | Firebase Auth (Google OAuth 2.0) | 12.12   |
+| Language           | JavaScript (ESM)                 | ES2022+ |
 
 **Notable integration decisions:**
 
@@ -101,14 +101,14 @@ This function is the architectural keystone. Because the Firestore document path
 
 The six exported functions and their Firestore operations:
 
-| Function | Firestore Op | Purpose |
-|---|---|---|
-| `subscribePermissions(uid, cb)` | `onSnapshot(collection)` | Real-time listener for all user permissions |
-| `writePermission(serviceId, opts)` | `setDoc` | Create or overwrite a grant (idempotent) |
-| `revokePermission(uid, serviceId)` | `updateDoc` | Set `status: false` + attach revocation token |
-| `panicRevokeAll(uid, serviceIds[])` | `writeBatch` | Atomically revoke all grants simultaneously |
-| `checkPermission(uid, serviceId)` | `getDoc` | One-shot read for middleware simulation |
-| `grantConsent(opts)` | `addDoc` × 2 | Write immutable audit records to `user_consents` and `permission_history` |
+| Function                            | Firestore Op             | Purpose                                                                   |
+| ----------------------------------- | ------------------------ | ------------------------------------------------------------------------- |
+| `subscribePermissions(uid, cb)`     | `onSnapshot(collection)` | Real-time listener for all user permissions                               |
+| `writePermission(serviceId, opts)`  | `setDoc`                 | Create or overwrite a grant (idempotent)                                  |
+| `revokePermission(uid, serviceId)`  | `updateDoc`              | Set `status: false` + attach revocation token                             |
+| `panicRevokeAll(uid, serviceIds[])` | `writeBatch`             | Atomically revoke all grants simultaneously                               |
+| `checkPermission(uid, serviceId)`   | `getDoc`                 | One-shot read for middleware simulation                                   |
+| `grantConsent(opts)`                | `addDoc` × 2             | Write immutable audit records to `user_consents` and `permission_history` |
 
 ---
 
@@ -177,8 +177,13 @@ The permissions listener is gated on `user.uid` and re-attaches automatically wh
 
 ```js
 useEffect(() => {
-  if (!user) { setLoading(false); return; }
-  const unsub = subscribePermissions(user.uid, (docs) => { /* ... */ });
+  if (!user) {
+    setLoading(false);
+    return;
+  }
+  const unsub = subscribePermissions(user.uid, (docs) => {
+    /* ... */
+  });
   return unsub;
 }, [user?.uid]);
 ```
@@ -193,7 +198,8 @@ Clicking **Revoke** on a consent card triggers a single `updateDoc` call:
 
 ```js
 export async function revokePermission(userId, serviceId) {
-  const revokeToken = "REV-SHA256-" + Math.random().toString(36).substring(2).toUpperCase();
+  const revokeToken =
+    "REV-SHA256-" + Math.random().toString(36).substring(2).toUpperCase();
   await updateDoc(permDoc(userId, serviceId), {
     status: false,
     revokeToken,
@@ -216,7 +222,8 @@ The **Panic Button** revokes every active permission simultaneously using a Fire
 export async function panicRevokeAll(userId, serviceIds) {
   const batch = writeBatch(db);
   serviceIds.forEach((id) => {
-    const revokeToken = "REV-SHA256-" + Math.random().toString(36).substring(2).toUpperCase();
+    const revokeToken =
+      "REV-SHA256-" + Math.random().toString(36).substring(2).toUpperCase();
     batch.update(permDoc(userId, id), {
       status: false,
       revokeToken,
@@ -311,11 +318,11 @@ service cloud.firestore {
 
 **Why these rules work:**
 
-| Rule | What it prevents |
-|---|---|
-| `request.auth.uid == uid` on sub-collection | User A cannot read or write User B's permissions, even with a valid JWT |
-| `create` only on audit collections | No client can delete or modify historical records — the audit trail is append-only |
-| `request.resource.data.userId == request.auth.uid` on create | A client cannot forge audit records attributed to another user |
+| Rule                                                         | What it prevents                                                                   |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `request.auth.uid == uid` on sub-collection                  | User A cannot read or write User B's permissions, even with a valid JWT            |
+| `create` only on audit collections                           | No client can delete or modify historical records — the audit trail is append-only |
+| `request.resource.data.userId == request.auth.uid` on create | A client cannot forge audit records attributed to another user                     |
 
 The sub-collection path (`users/{uid}/permissions`) is the primary isolation boundary. Security rules are the enforcement layer on top. Both must be correct for the system to be fully secure.
 
@@ -325,11 +332,23 @@ Each permission grant is scored 1–10 based on the sensitivity of the requested
 
 ```js
 const DATA_WEIGHT = {
-  financial: 5,  national_id: 5,  medical: 5,  biometric: 5,
-  health: 4,     property: 4,     transactions: 4,  credit_score: 4,
-  location: 3,   contacts: 3,     documents: 3,
-  photos: 2,     phone: 2,        device_id: 2,
-  email: 1,      academic: 1,     attendance: 1,
+  financial: 5,
+  national_id: 5,
+  medical: 5,
+  biometric: 5,
+  health: 4,
+  property: 4,
+  transactions: 4,
+  credit_score: 4,
+  location: 3,
+  contacts: 3,
+  documents: 3,
+  photos: 2,
+  phone: 2,
+  device_id: 2,
+  email: 1,
+  academic: 1,
+  attendance: 1,
 };
 ```
 
@@ -359,12 +378,12 @@ The Firebase configuration lives in `src/firebase.js`. Replace the `firebaseConf
 ```js
 // src/firebase.js
 const firebaseConfig = {
-  apiKey:            "YOUR_API_KEY",
-  authDomain:        "YOUR_PROJECT.firebaseapp.com",
-  projectId:         "YOUR_PROJECT_ID",
-  storageBucket:     "YOUR_PROJECT.firebasestorage.app",
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.firebasestorage.app",
   messagingSenderId: "YOUR_SENDER_ID",
-  appId:             "YOUR_APP_ID",
+  appId: "YOUR_APP_ID",
 };
 ```
 
@@ -432,14 +451,14 @@ Internally, one `setDoc` call writes to `users/{uid}/permissions/kaspi-kz`:
 
 ```json
 {
-  "ownerUid":    "uid_abc123",
-  "serviceId":   "kaspi-kz",
-  "name":        "Kaspi.kz",
-  "category":    "Finance",
-  "dataTypes":   ["financial", "transactions", "credit_score"],
-  "status":      true,
-  "grantedAt":   "2024-01-15T10:30:00Z",
-  "expiresAt":   "2024-01-15T10:45:00Z",
+  "ownerUid": "uid_abc123",
+  "serviceId": "kaspi-kz",
+  "name": "Kaspi.kz",
+  "category": "Finance",
+  "dataTypes": ["financial", "transactions", "credit_score"],
+  "status": true,
+  "grantedAt": "2024-01-15T10:30:00Z",
+  "expiresAt": "2024-01-15T10:45:00Z",
   "revokeToken": null
 }
 ```
@@ -474,22 +493,26 @@ After a page refresh, `onAuthStateChanged` restores the Google session and `onSn
 
 ## Supported Services
 
-| Service | Category | Region |
-|---|---|---|
-| Google Maps | Navigation | Global |
-| PayPal | Finance | Global |
-| LinkedIn | Professional | Global |
-| Amazon | Shopping | Global |
-| Spotify | Entertainment | Global |
-| Meta | Social | Global |
-| Apple Health | Health | Global |
-| eGov.kz | Government | 🇰🇿 Kazakhstan |
-| Kaspi.kz | Finance | 🇰🇿 Kazakhstan |
-| NIS Mektep | Education | 🇰🇿 Kazakhstan |
-| Damumed | Healthcare | 🇰🇿 Kazakhstan |
-| TestApp | Demo | Middleware simulation |
+| Service      | Category      | Region                |
+| ------------ | ------------- | --------------------- |
+| Google Maps  | Navigation    | Global                |
+| PayPal       | Finance       | Global                |
+| LinkedIn     | Professional  | Global                |
+| Amazon       | Shopping      | Global                |
+| Spotify      | Entertainment | Global                |
+| Meta         | Social        | Global                |
+| Apple Health | Health        | Global                |
+| eGov.kz      | Government    | 🇰🇿 Kazakhstan         |
+| Kaspi.kz     | Finance       | 🇰🇿 Kazakhstan         |
+| NIS Mektep   | Education     | 🇰🇿 Kazakhstan         |
+| Damumed      | Healthcare    | 🇰🇿 Kazakhstan         |
+| TestApp      | Demo          | Middleware simulation |
 
 ---
 
-*Built for a hackathon. Architecture designed to demonstrate production-grade privacy infrastructure patterns.*
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+_Built for a hackathon. Architecture designed to demonstrate production-grade privacy infrastructure patterns._
 **Author** [Zhoshy Khalelov](https://github.com/zhxshy)
