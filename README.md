@@ -292,7 +292,9 @@ Every grant and revocation is written to a per-user Firestore sub-collection (`u
 // firebase-integration.js
 export async function logActivity(uid, { serviceId, action, dataTypes }) {
   await addDoc(collection(db, "users", uid, "history"), {
-    serviceId, action, dataTypes,
+    serviceId,
+    action,
+    dataTypes,
     timestamp: serverTimestamp(),
   });
 }
@@ -304,10 +306,13 @@ export function subscribeHistory(uid, callback) {
     limit(10),
   );
   return onSnapshot(q, (snap) =>
-    callback(snap.docs.map((d) => ({
-      id: d.id, ...d.data(),
-      timestamp: d.data().timestamp?.toDate?.() ?? new Date(),
-    })))
+    callback(
+      snap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+        timestamp: d.data().timestamp?.toDate?.() ?? new Date(),
+      })),
+    ),
   );
 }
 ```

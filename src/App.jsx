@@ -235,6 +235,7 @@ function DataFlowViz({ consents, revoking }) {
           <motion.circle key={`pulse-${n.id}`}
             cx={n.x} cy={n.y} r={14} fill="none"
             stroke={n.m.color} strokeWidth={1}
+            initial={{ r: 14, opacity: 0.5 }}
             animate={{ r: [14, 22, 14], opacity: [0.5, 0, 0.5] }}
             transition={{ duration: 2, repeat: Infinity }}
           />
